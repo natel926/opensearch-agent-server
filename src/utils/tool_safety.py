@@ -46,7 +46,6 @@ _WRITE_PREFIXES = (
 _WRITE_EXACT = frozenset(
     {
         "reindex",
-        "update_settings",
         "snapshot",
     }
 )
@@ -68,6 +67,10 @@ _READ_EXACT = frozenset(
     }
 )
 _GENERIC_REQUEST_TOOLS = frozenset({"opensearch_request", "http_request"})
+# Bare \* intentionally has no segment-boundary anchor so index-wildcard
+# patterns like /logs-*/_settings are caught regardless of position.
+# _all is anchored to segment boundaries to avoid matching path substrings
+# like /my-index_all.
 _WILDCARD_PATH_RE = re.compile(r"\*|(^|/)_all(/|$)")
 
 
@@ -79,10 +82,9 @@ def classify_tool_call(tool_name: str, params: dict[str, Any] | None) -> RiskLev
     hook still audits unrecognised tools without latency cost on reads.
     """
     name = (tool_name or "").lower()
-    p = params or {}
 
     if name in _GENERIC_REQUEST_TOOLS:
-        return _classify_generic_request(p)
+        return _classify_generic_request(params or {})
 
     if any(name.startswith(pfx) for pfx in _DESTRUCTIVE_PREFIXES):
         return RiskLevel.DESTRUCTIVE
@@ -115,7 +117,13 @@ def _classify_generic_request(params: dict[str, Any]) -> RiskLevel:
     if method in {"PUT", "POST", "PATCH"}:
         return RiskLevel.WRITE
 
-    return RiskLevel.READ
+    if method in {"GET", "HEAD"}:
+        return RiskLevel.READ
+
+    # Unknown or missing method: audit as a write rather than silently
+    # treating as read. Conservative default mirrors classify_tool_call's
+    # unknown-name fallback.
+    return RiskLevel.WRITE
 
 
 def canonical_call_hash(tool_name: str, params: dict[str, Any] | None) -> str:

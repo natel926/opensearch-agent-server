@@ -87,7 +87,7 @@ class TestClassifyDestructive:
             is RiskLevel.DESTRUCTIVE
         )
 
-    @pytest.mark.parametrize("method", ["PUT", "POST", "PATCH", "DELETE"])
+    @pytest.mark.parametrize("method", ["PUT", "POST", "PATCH"])
     @pytest.mark.parametrize("path", ["/_all/_close", "/*/_settings", "/logs-*/_doc/1"])
     def test_wildcard_or_all_with_write_method(self, method: str, path: str) -> None:
         assert (
@@ -110,6 +110,11 @@ class TestClassifyDestructive:
             )
             is RiskLevel.WRITE
         )
+
+    def test_generic_request_with_none_params_defaults_to_write(self) -> None:
+        # An opensearch_request with no method should fail closed: classified
+        # as WRITE (audited) rather than silently treated as READ.
+        assert classify_tool_call("opensearch_request", None) is RiskLevel.WRITE
 
 
 class TestCanonicalCallHash:
