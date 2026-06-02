@@ -21,7 +21,7 @@ from strands import Agent as StrandsAgentCore
 
 from orchestrator.router import PageContextRouter
 from utils.logging_helpers import get_logger, log_debug_event, log_info_event
-from utils.obo_context import OboAuth
+from utils.safety_hook import reset_approved_calls, set_approved_calls
 
 logger = get_logger(__name__)
 
@@ -236,5 +236,17 @@ class AgentOrchestrator:
         if obo_auth is not None:
             obo_auth.set_token(token)
 
-        async for event in agui_agent.run(input_data):
-            yield event
+        # Push per-request approval hashes onto a ContextVar so the
+        # ToolSafetyHook can read them when deciding whether to cancel
+        # destructive tool calls. Reset on the way out so approvals do
+        # not leak between requests.
+        approved: list[str] = []
+        if input_data.forwarded_props:
+            approved = input_data.forwarded_props.get("approved_tool_calls") or []
+
+        approval_token = set_approved_calls(approved)
+        try:
+            async for event in agui_agent.run(input_data):
+                yield event
+        finally:
+            reset_approved_calls(approval_token)
