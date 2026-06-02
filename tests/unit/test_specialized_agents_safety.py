@@ -49,9 +49,10 @@ async def test_sub_agent_registers_safety_hook(agent_func_name, expected_prompt_
         mock_agent_instance.invoke_async = _fake_invoke
         mock_agent_cls.return_value = mock_agent_instance
 
-        # Find the underlying coroutine (handle the @monitored_tool wrapping).
-        # monitored_tool uses functools.wraps, so __wrapped__ is the async_wrapper
-        # which calls the original coroutine function.
+        # monitored_tool wraps the function with @functools.wraps, then passes
+        # the wrapper through Strands' @tool decorator. We unwrap to the
+        # monitored async_wrapper so we can invoke its body directly without
+        # routing through Strands' tool-invocation machinery.
         decorated = getattr(specialized_agents, agent_func_name)
         underlying = getattr(decorated, "__wrapped__", decorated)
         await underlying("test query")
@@ -61,6 +62,11 @@ async def test_sub_agent_registers_safety_hook(agent_func_name, expected_prompt_
             f"{agent_func_name}: Agent constructor was not called"
         )
         kwargs = mock_agent_cls.call_args.kwargs
+        assert kwargs, (
+            f"{agent_func_name}: Agent(...) was called with no keyword arguments. "
+            "If the call was switched to positional args, update this test to read "
+            "from call_args.args instead."
+        )
         hooks = kwargs.get("hooks", [])
         assert any(isinstance(h, ToolSafetyHook) for h in hooks), (
             f"{agent_func_name} did not register ToolSafetyHook (hooks={hooks!r})"
