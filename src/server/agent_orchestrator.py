@@ -21,7 +21,7 @@ from strands import Agent as StrandsAgentCore
 
 from orchestrator.router import PageContextRouter
 from utils.logging_helpers import get_logger, log_debug_event, log_info_event
-from utils.safety_hook import reset_approved_calls, set_approved_calls
+from utils.safety_hook import ToolSafetyHook, reset_approved_calls, set_approved_calls
 
 logger = get_logger(__name__)
 
@@ -213,6 +213,13 @@ class AgentOrchestrator:
             obo_auth = getattr(strands_agent, "_obo_auth", None)
             if obo_auth is not None:
                 agui_agent._obo_auth = obo_auth
+            # ag_ui_strands.StrandsAgent does not copy `hooks` from the
+            # template Strands Agent into its per-thread agent factory kwargs.
+            # Inject the safety hook here so every per-thread StrandsAgentCore
+            # created by AGUIStrandsAgent.run() registers it.  Stateless —
+            # one instance is safe across all threads/runs because approval
+            # state lives in a ContextVar.
+            agui_agent._agent_kwargs["hooks"] = [ToolSafetyHook()]
             self._cached_agui_agents[agent_name] = agui_agent
             log_debug_event(
                 logger,
