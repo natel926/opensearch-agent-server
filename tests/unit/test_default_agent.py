@@ -218,3 +218,31 @@ class TestLoggingAgentSkills:
         call_args = mock_agent.state.set.call_args
         assert call_args.args[0] == "agent_skills"
         assert call_args.args[1] == {"activated_skills": ["my-skill"]}
+
+
+class TestToolSafetyHookRegistered:
+    """Verify ToolSafetyHook is attached to the default agent."""
+
+    @patch("agents.default_agent.Agent")
+    @patch("agents.default_agent.MCPClient")
+    @patch("agents.default_agent._load_all_skills", return_value=[])
+    def test_default_agent_registers_tool_safety_hook(
+        self,
+        mock_load_skills: MagicMock,
+        mock_mcp_client_cls: MagicMock,
+        mock_agent_cls: MagicMock,
+    ) -> None:
+        mock_client = MagicMock()
+        mock_client.list_tools_sync.return_value = []
+        mock_mcp_client_cls.return_value = mock_client
+        mock_agent_cls.return_value = MagicMock()
+
+        from utils.safety_hook import ToolSafetyHook
+
+        create_default_agent("http://localhost:9200")
+
+        kwargs = mock_agent_cls.call_args.kwargs
+        hooks = kwargs.get("hooks") or []
+        assert any(isinstance(h, ToolSafetyHook) for h in hooks), (
+            f"Expected ToolSafetyHook in hooks=, got {hooks!r}"
+        )
